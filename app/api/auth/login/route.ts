@@ -1,49 +1,90 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authUsers } from '@/lib/mockData';
-import crypto from 'crypto';
+import { createClient } from '@supabase/supabase-js';
+import { verifyPassword, generateToken } from '@/lib/auth';
+import { setAuthToken } from '@/lib/session';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseServiceRole = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+const supabase = createClient(supabaseUrl, supabaseServiceRole);
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { username, password } = body;
+    const { username, password } = await request.json();
 
+    // Validate input
     if (!username || !password) {
       return NextResponse.json(
-        { error: 'Username and password are required' },
+        { error: 'Username/email and password are required' },
         { status: 400 }
       );
     }
 
-    const user = authUsers.find(
-      u => u.username === username || u.email === username
-    );
+    // Find user by username or email
+    const { data: user, error: fetchError } = await supabase
+      .from('profiles')
+      .select('id, username, email, password_hash, role, is_approved, is_active')
+      .or(`username.eq.${username},email.eq.${username}`)
+      .single();
 
-    if (!user || user.password !== password) {
+    if (fetchError || !user) {
       return NextResponse.json(
         { error: 'Invalid credentials' },
         { status: 401 }
       );
     }
 
-    // Generate a mock JWT-like token
-    const token = crypto
-      .createHash('sha256')
-      .update(`${user.id}-${Date.now()}-${Math.random()}`)
-      .digest('hex');
+    // Check if user is active
+    if (!user.is_active) {
+      return NextResponse.json(
+        { error: 'Account has been deactivated' },
+        { status: 403 }
+      );
+    }
 
-    const { password: _, ...userWithoutPassword } = user;
+    // Check if user is approved
+    if (!user.is_approved) {
+      return NextResponse.json(
+        { error: 'Account pending admin approval' },
+        { status: 403 }
+      );
+    }
+
+    // Verify password
+    const isValid = await verifyPassword(password, user.password_hash);
+    if (!isValid) {
+      return NextResponse.json(
+        { error: 'Invalid credentials' },
+        { status: 401 }
+      );
+    }
+
+    // Generate JWT token
+    const token = await generateToken({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+    });
+
+    // Set HTTP-only cookie
+    await setAuthToken(token);
+
+    const { password_hash: _, ...userWithoutPassword } = user;
 
     return NextResponse.json({
-      id: user.id,
-      username: user.username,
-      email: user.email,
-      token,
-      expiresIn: 3600
+      user: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+      },
+      message: 'Login successful',
     });
-  } catch {
+  } catch (error) {
+    console.error('Login error:', error);
     return NextResponse.json(
-      { error: 'Invalid request body' },
-      { status: 400 }
+      { error: 'Internal server error' },
+      { status: 500 }
     );
   }
 }

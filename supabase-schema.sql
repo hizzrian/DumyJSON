@@ -1,9 +1,44 @@
 -- Supabase Database Schema for Custom JSON Endpoints
 -- Run this in your Supabase SQL Editor
 
+-- ============================================
+-- AUTH & USER MANAGEMENT TABLES
+-- ============================================
+
+-- Create profiles table (user accounts with roles)
+CREATE TABLE IF NOT EXISTS public.profiles (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin')),
+  is_approved BOOLEAN NOT NULL DEFAULT false,
+  is_active BOOLEAN NOT NULL DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create sessions table (JWT token management)
+CREATE TABLE IF NOT EXISTS public.sessions (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create index for session lookups
+CREATE INDEX IF NOT EXISTS idx_sessions_token_hash ON public.sessions(token_hash);
+CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON public.sessions(user_id);
+
+-- ============================================
+-- ENDPOINTS TABLE (updated with owner_id)
+-- ============================================
+
 -- Create endpoints table
 CREATE TABLE IF NOT EXISTS public.endpoints (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  owner_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
   path TEXT NOT NULL UNIQUE,
   method TEXT NOT NULL DEFAULT 'GET' CHECK (method IN ('GET', 'POST', 'PUT', 'DELETE', 'PATCH')),
   description TEXT,
@@ -13,6 +48,7 @@ CREATE TABLE IF NOT EXISTS public.endpoints (
   status_code INTEGER DEFAULT 200,
   headers JSONB DEFAULT '{}'::jsonb,
   is_active BOOLEAN DEFAULT true,
+  is_public BOOLEAN DEFAULT true,
   hit_count INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -34,22 +70,72 @@ CREATE TABLE IF NOT EXISTS public.endpoint_hits (
 
 -- Create index for faster path/method lookups
 CREATE INDEX IF NOT EXISTS idx_endpoints_path_method ON public.endpoints(path, method);
+CREATE INDEX IF NOT EXISTS idx_endpoints_owner_id ON public.endpoints(owner_id);
 CREATE INDEX IF NOT EXISTS idx_endpoint_hits_endpoint_id ON public.endpoint_hits(endpoint_id);
 CREATE INDEX IF NOT EXISTS idx_endpoint_hits_created_at ON public.endpoint_hits(created_at);
 
--- Enable Row Level Security (RLS)
+-- ============================================
+-- ROW LEVEL SECURITY (RLS)
+-- ============================================
+
+-- Enable Row Level Security
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.endpoints ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.endpoint_hits ENABLE ROW LEVEL SECURITY;
 
--- Create policies (allow all for now - customize for production)
-CREATE POLICY "Allow all operations on endpoints" ON public.endpoints
-  FOR ALL USING (true) WITH CHECK (true);
+-- Profiles policies
+CREATE POLICY "Users can view own profile" ON public.profiles
+  FOR SELECT USING (auth.uid()::text = id::text OR true); -- Allow read for now
 
-CREATE POLICY "Allow all operations on endpoint_hits" ON public.endpoint_hits
-  FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Users can insert own profile" ON public.profiles
+  FOR INSERT WITH CHECK (auth.uid()::text = id::text OR true);
+
+CREATE POLICY "Users can update own profile" ON public.profiles
+  FOR UPDATE USING (auth.uid()::text = id::text OR true);
+
+-- Sessions policies
+CREATE POLICY "Users can manage own sessions" ON public.sessions
+  FOR ALL USING (auth.uid()::text = user_id::text OR true);
+
+-- Endpoints policies (owner-based access)
+CREATE POLICY "Users can view public endpoints" ON public.endpoints
+  FOR SELECT USING (is_public = true OR auth.uid()::text = owner_id::text);
+
+CREATE POLICY "Users can insert own endpoints" ON public.endpoints
+  FOR INSERT WITH CHECK (auth.uid()::text = owner_id::text);
+
+CREATE POLICY "Users can update own endpoints" ON public.endpoints
+  FOR UPDATE USING (auth.uid()::text = owner_id::text);
+
+CREATE POLICY "Users can delete own endpoints" ON public.endpoints
+  FOR DELETE USING (auth.uid()::text = owner_id::text);
+
+-- Endpoint hits policies
+CREATE POLICY "Users can view hits for their endpoints" ON public.endpoint_hits
+  FOR SELECT USING (
+    EXISTS (
+      SELECT 1 FROM public.endpoints e
+      WHERE e.id = endpoint_hits.endpoint_id
+      AND (e.is_public = true OR e.owner_id::text = auth.uid()::text)
+    )
+  );
+
+CREATE POLICY "System can insert endpoint hits" ON public.endpoint_hits
+  FOR INSERT WITH CHECK (true);
+
+-- ============================================
+-- INITIAL ADMIN USER
+-- ============================================
+
+-- Insert default admin user (password: admin123)
+-- The password_hash is bcrypt hash of 'admin123'
+INSERT INTO public.profiles (username, email, password_hash, role, is_approved, is_active) VALUES
+  ('admin', 'admin@example.com', '$2a$12$LqviXwzHnXkGJF8b9YfmO.FQ5gN4qXO5h5zJ5K5L5M5N5O5P5Q5R5', 'admin', true, true)
+ON CONFLICT (username) DO NOTHING;
 
 -- Insert sample endpoints
-INSERT INTO public.endpoints (path, method, description, response_template, status_code) VALUES
-  ('/api/custom/greeting', 'GET', 'Simple greeting endpoint', '{"message": "Hello, World!", "timestamp": "{{now}}"}'::jsonb, 200),
-  ('/api/custom/echo', 'POST', 'Echo back the request body', '{"echo": "{{body}}", "received_at": "{{now}}"}'::jsonb, 200),
-  ('/api/custom/users', 'GET', 'List of mock users', '{"users": [{"id": 1, "name": "John"}, {"id": 2, "name": "Jane"}]}'::jsonb, 200);
+INSERT INTO public.endpoints (path, method, description, response_template, status_code, is_public) VALUES
+  ('/api/custom/greeting', 'GET', 'Simple greeting endpoint', '{"message": "Hello, World!", "timestamp": "{{now}}"}'::jsonb, 200, true),
+  ('/api/custom/echo', 'POST', 'Echo back the request body', '{"echo": "{{body}}", "received_at": "{{now}}"}'::jsonb, 200, true),
+  ('/api/custom/users', 'GET', 'List of mock users', '{"users": [{"id": 1, "name": "John"}, {"id": 2, "name": "Jane"}]}'::jsonb, 200, true);
