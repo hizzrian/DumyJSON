@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { hashPassword } from '@/lib/auth';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceRole = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const supabaseServiceRole = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
 
 // Use service role for admin operations
 const supabase = createClient(supabaseUrl, supabaseServiceRole);
