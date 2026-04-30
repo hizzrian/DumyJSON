@@ -235,9 +235,42 @@ export const products = generateProducts(100);
 export const posts = generatePosts(100);
 export const todos = generateTodos(200);
 
+export const comments: Comment[] = [
+  { id: 1, postId: 1, body: 'Great article! Very helpful for beginners.', user: users[0] },
+  { id: 2, postId: 1, body: 'Thanks for sharing this information.', user: users[1] },
+  { id: 3, postId: 2, body: 'Could you elaborate more on this topic?', user: users[2] },
+  { id: 4, postId: 3, body: 'This is exactly what I was looking for!', user: users[3] },
+  { id: 5, postId: 4, body: 'Well written and easy to understand.', user: users[4] },
+  { id: 6, postId: 5, body: 'I disagree with some points but overall good content.', user: users[5] },
+  { id: 7, postId: 2, body: 'Bookmarked for future reference!', user: users[6] },
+  { id: 8, postId: 6, body: 'Looking forward to more articles like this.', user: users[7] },
+];
+
 // Auth users for login
 export const authUsers = [
   { id: 1, username: 'admin', email: 'admin@example.com', password: 'admin123' },
   { id: 2, username: 'user', email: 'user@example.com', password: 'user123' },
   ...users.slice(0, 10).map(u => ({ id: u.id, username: u.username, email: u.email, password: 'password123' }))
 ];
+
+export function getNextId(arr: { id: number }[]): number {
+  return arr.length === 0 ? 1 : Math.max(...arr.map(item => item.id)) + 1;
+}
+
+export function applySort<T extends Record<string, unknown>>(
+  arr: T[],
+  sort: string | null,
+  order: string | null
+): T[] {
+  if (!sort) return arr;
+  const dir = order === 'desc' ? -1 : 1;
+  return [...arr].sort((a, b) => {
+    const aVal = a[sort];
+    const bVal = b[sort];
+    if (typeof aVal === 'string' && typeof bVal === 'string')
+      return dir * aVal.localeCompare(bVal);
+    if (typeof aVal === 'number' && typeof bVal === 'number')
+      return dir * (aVal - bVal);
+    return 0;
+  });
+}

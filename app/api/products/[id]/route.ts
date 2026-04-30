@@ -16,7 +16,7 @@ export async function GET(
   const select = searchParams.get('select')?.split(',');
 
   if (select) {
-    const filtered: any = {};
+    const filtered: Record<string, unknown> = {};
     select.forEach(field => {
       if (field in product) filtered[field] = product[field as keyof typeof product];
     });
@@ -24,4 +24,59 @@ export async function GET(
   }
 
   return NextResponse.json(product);
+}
+
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const idx = products.findIndex(p => p.id === parseInt(id));
+
+  if (idx === -1) {
+    return NextResponse.json({ error: 'Product not found' }, { status: 404 });
+  }
+
+  try {
+    const body = await request.json();
+    products[idx] = { ...body, id: parseInt(id) };
+    return NextResponse.json(products[idx]);
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+  }
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const idx = products.findIndex(p => p.id === parseInt(id));
+
+  if (idx === -1) {
+    return NextResponse.json({ error: 'Product not found' }, { status: 404 });
+  }
+
+  try {
+    const body = await request.json();
+    products[idx] = { ...products[idx], ...body, id: parseInt(id) };
+    return NextResponse.json(products[idx]);
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+  }
+}
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const idx = products.findIndex(p => p.id === parseInt(id));
+
+  if (idx === -1) {
+    return NextResponse.json({ error: 'Product not found' }, { status: 404 });
+  }
+
+  const [deleted] = products.splice(idx, 1);
+  return NextResponse.json(deleted);
 }
