@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
+import { supabaseConfig } from './config';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabasePublishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
+export const supabase = createClient(supabaseConfig.url, supabaseConfig.publishableKey);
 
-export const supabase = createClient(supabaseUrl, supabasePublishableKey);
+export const supabaseAdmin = createClient(supabaseConfig.url, supabaseConfig.serviceRoleKey);
