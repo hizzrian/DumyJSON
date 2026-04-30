@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { products } from '@/lib/mockData';
+import { products, getNextId, applySort } from '@/lib/mockData';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -8,11 +8,13 @@ export async function GET(request: NextRequest) {
   const category = searchParams.get('category');
   const minPrice = searchParams.get('minPrice');
   const maxPrice = searchParams.get('maxPrice');
+  const search = searchParams.get('search');
+  const sort = searchParams.get('sort');
+  const order = searchParams.get('order');
   const select = searchParams.get('select')?.split(',');
 
   let result = [...products];
 
-  // Apply filters
   if (category) {
     result = result.filter(p => p.category.toLowerCase() === category.toLowerCase());
   }
@@ -22,24 +24,42 @@ export async function GET(request: NextRequest) {
   if (maxPrice) {
     result = result.filter(p => p.price <= parseFloat(maxPrice));
   }
+  if (search) {
+    const q = search.toLowerCase();
+    result = result.filter(p =>
+      p.title.toLowerCase().includes(q) ||
+      p.description.toLowerCase().includes(q) ||
+      p.brand.toLowerCase().includes(q) ||
+      p.category.toLowerCase().includes(q)
+    );
+  }
+
+  result = applySort(result, sort, order) as typeof result;
 
   const total = result.length;
-
-  // Apply pagination
   const paginated = result.slice(skip, skip + limit);
 
-  // Apply field selection
   if (select) {
-    result = paginated.map(product => {
-      const filtered: any = {};
+    const selected = paginated.map(product => {
+      const filtered: Record<string, unknown> = {};
       select.forEach(field => {
         if (field in product) filtered[field] = product[field as keyof typeof product];
       });
       return filtered;
     });
-  } else {
-    result = paginated;
+    return NextResponse.json({ products: selected, total, skip, limit });
   }
 
-  return NextResponse.json({ products: result, total, skip, limit });
+  return NextResponse.json({ products: paginated, total, skip, limit });
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const newProduct = { id: getNextId(products), ...body };
+    products.push(newProduct);
+    return NextResponse.json(newProduct, { status: 201 });
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+  }
 }
