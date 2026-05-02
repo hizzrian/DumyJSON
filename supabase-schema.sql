@@ -48,6 +48,18 @@ CREATE POLICY "Allow all operations on endpoints" ON public.endpoints
 CREATE POLICY "Allow all operations on endpoint_hits" ON public.endpoint_hits
   FOR ALL USING (true) WITH CHECK (true);
 
+-- Landing page CMS content table
+CREATE TABLE IF NOT EXISTS public.landing_content (
+  id INTEGER PRIMARY KEY DEFAULT 1,
+  content JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE public.landing_content ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow all operations on landing_content" ON public.landing_content
+  FOR ALL USING (true) WITH CHECK (true);
+
 -- Insert sample endpoints
 INSERT INTO public.endpoints (path, method, description, response_template, status_code) VALUES
   ('/api/custom/greeting', 'GET', 'Simple greeting endpoint', '{"message": "Hello, World!", "timestamp": "{{now}}"}'::jsonb, 200),
